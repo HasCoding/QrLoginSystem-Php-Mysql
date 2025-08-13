@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Kod ile Giriş</title>
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel (JSX için) -->
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Axios (API istekleri için) -->
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body {
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+<div id="root"></div>
+
+<script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // 1. GİRİŞ BAŞARILI OLDUĞUNDA YÖNLENDİRİLECEK SAYFA
+    function DashboardPage({ userName }) {
+        return (
+            <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md w-full">
+                <h1 className="text-3xl font-bold text-green-600 mb-4">Giriş Başarılı!</h1>
+                <p className="text-xl text-gray-700">Ana Sayfa'ya hoş geldin, <span className="font-semibold">{userName}</span>!</p>
+                <p className="text-gray-500 mt-2">Bu, giriş yaptıktan sonra gördüğünüz korumalı alandır.</p>
+            </div>
+        );
+    }
+
+    // 2. QR KODUNU GÖSTEREN GİRİŞ SAYFASI
+    function LoginPage() {
+        const [qrImage, setQrImage] = useState(null);
+        const [sessionId, setSessionId] = useState(null);
+        const [status, setStatus] = useState('loading');
+        const [userName, setUserName] = useState(null);
+
+        // QR kod yükleme fonksiyonu (hem ilk girişte hem de süresi dolduğunda kullanılacak)
+        const loadQr = () => {
+            axios.get('/api.php?action=pair')
+                .then(response => {
+                    setQrImage(response.data.qrImage);
+                    setSessionId(response.data.sessionId);
+                    setStatus('pending');
+                })
+                .catch(error => {
+                    console.error("QR Kodu alınamadı!", error);
+                    setStatus('error');
+                });
+        };
+
+        // Sayfa ilk açıldığında QR kod yükle
+        useEffect(() => {
+            loadQr();
+        }, []);
+
+        // Oturum durumunu kontrol et
+        useEffect(() => {
+            if (status !== 'pending' || !sessionId) return;
+
+            const intervalId = setInterval(() => {
+                axios.get(`/api.php?action=check&sessionId=${sessionId}`)
+                    .then(response => {
+                        if (response.data.status === 'success') {
+                            setUserName(response.data.userName);
+                            setStatus('success');
+                            clearInterval(intervalId);
+                        }
+                        else if (response.data.status === 'expired') {
+                            console.log("QR kod süresi doldu, yenileniyor...");
+                            clearInterval(intervalId);
+                            loadQr(); // yeni kod al
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Durum kontrolü başarısız!", error);
+                        setStatus('error');
+                        clearInterval(intervalId);
+                    });
+            }, 2500);
+
+            return () => clearInterval(intervalId);
+        }, [status, sessionId]);
+
+        if (status === 'success') {
+            return <DashboardPage userName={userName} />;
+        }
+
+        return (
+            <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md w-full transition-all duration-500">
+                <h1 className="text-3xl font-bold text-gray-800 mb-4">QR Kod ile Giriş</h1>
+
+                {status === 'loading' && (
+                    <div className="animate-pulse">
+                        <div className="w-64 h-64 bg-gray-200 mx-auto rounded-lg"></div>
+                        <p className="mt-4 text-gray-500">QR Kod Yükleniyor...</p>
+                    </div>
+                )}
+
+                {status === 'pending' && qrImage && (
+                    <div>
+                        <img src={qrImage} alt="Giriş için QR Kodu" className="mx-auto rounded-lg shadow-md" />
+                        <p className="mt-4 text-gray-600">Lütfen mobil uygulamanız ile QR kodu taratın.</p>
+                    </div>
+                )}
+
+                {status === 'error' && (
+                    <div className="text-red-600">
+                        <p className="text-xl font-semibold">Bir Hata Oluştu!</p>
+                        <p className="mt-2">Lütfen daha sonra tekrar deneyin veya konsolu kontrol edin.</p>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // Ana Uygulama
+    ReactDOM.render(<LoginPage />, document.getElementById('root'));
+</script>
+</body>
+</html>
